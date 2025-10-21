@@ -1,0 +1,71 @@
+# macOS
+.DS_Store
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Compiled extensions
+*.so
+
+#latex
+.latexmkrc
+
+
+# Virtual environments and env files
+.venv/
+venv/
+env/
+ENV/
+*.env
+*.env.*
+
+# Packaging / build artifacts
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+
+# Logs and caches
+*.log
+logs/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors/IDE
+.vscode/
+.idea/
+
+# LaTeX artifacts
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
+*.synctex.gz
+latex.out/
+_minted/
+
+# Common data archives (keep large binaries out of VCS)
+*.zip
+*.tar
+*.tar.gz
+*.gz
+*.bz2
+
+# Windows
+Thumbs.db
