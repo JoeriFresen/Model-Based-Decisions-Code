@@ -39,8 +39,8 @@ class NetworkVisualizationSuite:
     def __init__(self, data_dir="datasets"):
         """Initialize the suite with data directory."""
         self.data_dir = data_dir
-        self.networks = {}
-        self.network_stats = {}
+        self.networks = {} #dictionary to store the networks
+        self.network_stats = {} #dictionary to store the network statistics
         
     def load_facebook_network(self, filename="facebook_combined.txt.gz"):
         """Load Facebook social network from compressed file."""
@@ -52,17 +52,17 @@ class NetworkVisualizationSuite:
             
         print(f"Loading Facebook network from {filename}...")
         
-        # Load the network
+        # create an empty graph with networkX
         G = nx.Graph()
         
         with gzip.open(filepath, 'rt') as f:
-            for line in f:
+            for line in f: #for each line in the file
                 if line.strip():
-                    u, v = map(int, line.strip().split())
-                    G.add_edge(u, v)
+                    u, v = map(int, line.strip().split()) #split the line into two integers
+                    G.add_edge(u, v) #add an edge between the two nodes
         
         print(f"Loaded Facebook network: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
-        self.networks['Facebook'] = G
+        self.networks['Facebook'] = G #add the graph to the networks dictionary
         return G
     
     def generate_theoretical_networks(self, n=None, target_edges=None):
@@ -80,12 +80,12 @@ class NetworkVisualizationSuite:
         print(f"Generating theoretical networks with n={n}, target_edges≈{int(target_edges)}")
         
         # Calculate probability for ER graph
-        p = (2 * target_edges) / (n * (n - 1))
+        p = (2 * target_edges) / (n * (n - 1)) #define p based on the target number of edges from facebook network
         p = min(p, 0.1)  # Cap probability for reasonable computation
         
         # Erdős-Rényi
         print("  - Generating Erdős-Rényi graph...")
-        er_graph = nx.erdos_renyi_graph(n, p, seed=42)
+        er_graph = nx.erdos_renyi_graph(n, p, seed=42) 
         self.networks['Erdős-Rényi'] = er_graph
         
         # Watts-Strogatz (small-world)
@@ -107,7 +107,7 @@ class NetworkVisualizationSuite:
         """Analyze key properties of all networks."""
         print("\nAnalyzing network properties...")
         
-        for name, G in self.networks.items():
+        for name, G in self.networks.items(): #for each network in the networks dictionary
             print(f"\nAnalyzing {name} network...")
             
             stats = {}
@@ -142,7 +142,7 @@ class NetworkVisualizationSuite:
             stats['avg_clustering'] = nx.average_clustering(G)
             stats['global_clustering'] = nx.transitivity(G)
             
-            self.network_stats[name] = stats
+            self.network_stats[name] = stats  #store the stats of this network
     
     def create_network_comparison_plot(self):
         """Create comprehensive comparison plots of network properties."""
@@ -395,7 +395,7 @@ def main():
     
     print("\n" + "="*55)
     print("Analysis complete! Check the generated PNG files for visualizations.")
-    print("Files created:")
+    print("Files created:") 
     print("  • network_properties_comparison.png")
     print("  • network_visualizations_spring.png") 
     print("  • network_visualizations_kamada_kawai.png")

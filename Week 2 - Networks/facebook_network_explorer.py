@@ -14,7 +14,7 @@ Features:
 - Interactive subgraph exploration
 - Comparison with random networks
 
-Author: Network Analysis Course
+Author: Michael Lees
 Date: 2025
 """
 

@@ -10,13 +10,15 @@
 \usepackage{unicode-math}
 \usepackage{graphicx}
 \usepackage{tikz}
+
+
 \usetikzlibrary{positioning, arrows.meta}
 \usepackage{minted}
 \setminted{fontsize=\scriptsize, bgcolor=gray!5, frame=single}
 
 \title{Introduction to Git and GitHub}
-\subtitle{Version Control for Reproducible Computational Science}
-\author{Model-Based Decisions — Week 1 Practical}
+\subtitle{Model-Based Decisions — Week 1 Practical}
+\author{Michael Lees}
 \institute{Computational Science Lab, University of Amsterdam}
 \date{October 2025}
 
@@ -37,7 +39,7 @@
     \pause
     \vspace{1em}
     \begin{block}{Without version control}
-        \texttt{final\_report\_v2\_fixed\_final\_FINAL.docx} 😩
+        \texttt{final\_report\_v2\_fixed\_final\_FINAL.docx}
     \end{block}
 \end{frame}
 
@@ -48,24 +50,30 @@
         \item It records snapshots (“commits”) of your project over time.
         \item Every developer has a complete copy of the repository — no central lock-in.
     \end{itemize}
-
+    \vspace{1em}
     \begin{center}
         \begin{tikzpicture}[node distance=2.5cm, >=Stealth]
             \node[draw, fill=blue!10, rounded corners, minimum width=2.5cm] (repo) {Repository};
             \node[draw, fill=green!10, rounded corners, below left=1cm and 1cm of repo] (local1) {Your Laptop};
             \node[draw, fill=orange!10, rounded corners, below right=1cm and 1cm of repo] (local2) {Collaborator};
 
-            \draw[->, thick, blue!70] (repo) -- (local1) node[midway, left] {clone};
-            \draw[->, thick, blue!70] (local1) -- (repo) node[midway, left] {push};
-            \draw[->, thick, blue!70] (repo) -- (local2) node[midway, right] {clone};
-            \draw[->, thick, blue!70] (local2) -- (repo) node[midway, right] {push};
+            % shifted label positions
+            \draw[->, thick, blue!70] (repo) -- (local1)
+            node[midway, left=0.1cm, xshift=-0.2cm] {clone};
+            \draw[->, thick, blue!70] (local1) -- (repo)
+            node[midway, right=0cm, xshift=0.2cm] {push};
+
+            \draw[->, thick, blue!70] (repo) -- (local2)
+            node[midway, right=0.1cm, xshift=0.2cm] {clone};
+            \draw[->, thick, blue!70] (local2) -- (repo)
+            node[midway, left=0.1cm, xshift=-0.2cm] {push};
         \end{tikzpicture}
     \end{center}
 \end{frame}
 
 % -------------------------------------------------------------
-\begin{frame}{Key Concepts}
-    \begin{description}[leftmargin=1.5cm, labelwidth=2cm]
+\begin{frame}{Key Concepts or Terms}
+    \begin{description}[leftmargin=4cm, labelwidth=3cm]
         \item[Repository (repo)] A project folder tracked by Git.
         \item[Commit] A snapshot of your project at a specific point in time.
         \item[Branch] A line of development (default is \texttt{main}).
@@ -93,6 +101,8 @@
     \begin{minted}{bash}
   git status
   \end{minted}
+
+    This creates a repository \textbf {locally}, on your machine only.
 \end{frame}
 
 % -------------------------------------------------------------
@@ -103,8 +113,8 @@
   \end{minted}
 
     \begin{itemize}
-        \item \texttt{git add} stages files for the next snapshot.
-        \item \texttt{git commit} permanently records the snapshot with a message.
+        \item \texttt{git add}: This adds the file \texttt{my\_notebook.ipynb} to the staging area. The staging area is where you put changes and new files that you want to include in the next commit.
+        \item \texttt{git commit}: permanently records the snapshot with a message specified after \texttt{-m}. This message should describe the changes made in this commit.
     \end{itemize}
 
     \vspace{0.5em}
@@ -136,7 +146,7 @@
 % -------------------------------------------------------------
 \begin{frame}{The Basic Git Workflow}
     \begin{center}
-        \begin{tikzpicture}[node distance=2.3cm, every node/.style={align=center, rounded corners, minimum width=2.7cm, minimum height=1cm}]
+        \begin{tikzpicture}[node distance=1.3cm, every node/.style={align=center, rounded corners, minimum width=2.7cm, minimum height=1cm}]
             \node[fill=gray!10, draw] (edit) {Edit files};
             \node[fill=blue!10, draw, right=of edit] (add) {git add};
             \node[fill=green!10, draw, right=of add] (commit) {git commit};
@@ -156,7 +166,7 @@
 
 % -------------------------------------------------------------
 \begin{frame}[fragile]{Getting Updates from GitHub}
-    If others have updated the repository, use:
+    If others have updated the remote repository (i.e., on GitHub), use:
     \begin{minted}{bash}
   git pull
   \end{minted}

@@ -27,7 +27,7 @@ sns.set_palette("husl")
 class NetworkVisualComparison:
     """Visual comparison of Facebook and Erdős-Rényi networks."""
     
-    def __init__(self, data_dir="datasets"):
+    def __init__(self, data_dir="../datasets"):
         """Initialize the comparison."""
         self.data_dir = data_dir
         self.facebook_graph = None
@@ -70,16 +70,16 @@ class NetworkVisualComparison:
         print(f"✓ Generated ER graph: {self.er_graph.number_of_nodes():,} nodes, {self.er_graph.number_of_edges():,} edges")
         return True
     
-    def create_side_by_side_network_plot(self):
-        """Create side-by-side visualization of both networks."""
+    def create_vertical_network_plot(self):
+        """Create vertical visualization of both networks (one above the other)."""
         if self.facebook_graph is None or self.er_graph is None:
             print("Please load networks first!")
             return
         
-        print("Creating side-by-side network visualization...")
+        print("Creating vertical network visualization...")
         
-        # Create figure with two subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
+        # Create figure with two subplots (one above the other)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 16))
         fig.suptitle('Network Structure Comparison: Facebook vs Erdős-Rényi', 
                     fontsize=16, fontweight='bold')
         
@@ -114,7 +114,7 @@ class NetworkVisualComparison:
         fb_pos = nx.spring_layout(fb_subgraph, k=1, iterations=50, seed=42)
         er_pos = nx.spring_layout(er_subgraph, k=1, iterations=50, seed=42)
         
-        # Plot Facebook network
+        # Plot Facebook network (top subplot)
         print("  Drawing Facebook network...")
         nx.draw_networkx_edges(fb_subgraph, fb_pos, ax=ax1, alpha=0.3, width=0.5, edge_color='gray')
         nodes1 = nx.draw_networkx_nodes(fb_subgraph, fb_pos, ax=ax1,
@@ -131,7 +131,7 @@ class NetworkVisualComparison:
         cbar1 = plt.colorbar(nodes1, ax=ax1, shrink=0.8)
         cbar1.set_label('Local Clustering Coefficient', rotation=270, labelpad=20)
         
-        # Plot ER network
+        # Plot ER network (bottom subplot)
         print("  Drawing Erdős-Rényi network...")
         nx.draw_networkx_edges(er_subgraph, er_pos, ax=ax2, alpha=0.3, width=0.5, edge_color='gray')
         nodes2 = nx.draw_networkx_nodes(er_subgraph, er_pos, ax=ax2,
@@ -143,7 +143,6 @@ class NetworkVisualComparison:
         ax2.set_title(f'Erdős-Rényi Random Graph\n({er_subgraph.number_of_nodes()} nodes, {er_subgraph.number_of_edges()} edges)', 
                      fontsize=14, fontweight='bold')
         ax2.axis('off')
-        
         # Add colorbar for ER
         cbar2 = plt.colorbar(nodes2, ax=ax2, shrink=0.8)
         cbar2.set_label('Local Clustering Coefficient', rotation=270, labelpad=20)
@@ -163,8 +162,8 @@ class NetworkVisualComparison:
                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
         plt.tight_layout()
-        plt.savefig('networks_side_by_side.png', dpi=300, bbox_inches='tight')
-        print("✓ Side-by-side network plot saved as 'networks_side_by_side.png'")
+        plt.savefig('networks_vertical.png', dpi=300, bbox_inches='tight')
+        print("✓ Vertical network plot saved as 'networks_vertical.png'")
         
         return fig
     
@@ -317,8 +316,8 @@ def main():
         print("Failed to generate ER graph.")
         return
     
-    # Create side-by-side network visualization
-    comparison.create_side_by_side_network_plot()
+    # Create vertical network visualization
+    comparison.create_vertical_network_plot()
     
     # Create clustering distribution comparison
     comparison.create_clustering_distribution_comparison()
