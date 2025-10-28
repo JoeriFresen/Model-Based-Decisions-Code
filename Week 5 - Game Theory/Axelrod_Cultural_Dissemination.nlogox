@@ -1,0 +1,1197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<model version="NetLogo 7.0.0" snapToGrid="false">
+  <code><![CDATA[;; Axelrod's Model for Cultural Evolution is an agent-based model described by
+;; Robert Axelrod in his paper:
+;; Axelrod, R. 1997. “The dissemination of culture - A model with local convergence and global polarization.”
+;;        Journal of Conflict Resolution 41:203-226.
+;;
+;; 'Axelrod_Cultural_Dissemination.nlogo' implements this model with one extension: agents can move.
+;;
+;; Copyright (C) 2013 Arezky H. Rodríguez (arezky@gmail.com)
+;;
+
+;; -------------------------------------------------- ;;
+;;;;;;;;;;;;;;;;;
+;;; VARIABLES ;;;
+;;;;;;;;;;;;;;;;;
+
+globals [
+  number_of_agents                ;; number of all agents in the society
+  Cult_max                        ;; number related with the maximun cultural value of an agent (q-1 q-1 q-1 ... q-1)
+  number_of_cultures              ;; number of cultures in the society
+  number_of_possible_interactions ;; number of possible interactions at each tick that could be according to cultural overlap between agents
+  number_of_real_interactions     ;; number of real interactions at each tick that occurs according to cultural overlap between agents
+  time                            ;; time
+  component-size                  ;; number of turtles explored so far in the current component
+  giant-component-size            ;; number of turtles in the giant component
+  number_of_cultural_regions      ;; number of cultural regions simply connected
+]
+
+turtles-own [
+  culture                         ;; culture of an agent
+  explored?                       ;; if the agent is already explored (or not) when determining number of cultural regions
+]
+
+patches-own [ ]
+
+;; -------------------------------------------------- ;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+;;; SETUP PROCEDURES ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; General setup settings
+to setup
+  clear-all
+  clear-all-plots
+
+  resize-world 0 (world-size-x - 1) 0 (world-size-y - 1) ;; defining the size of the society (number of patches
+  set number_of_agents (world-size-x * world-size-y)     ;; one agent per patch
+  set-patch-size 360 / world-size-y                      ;; setting patch size for good looking
+  ask patches [set pcolor 34]                            ;; setting color of patches
+  set giant-component-size 0                             ;; initializing the number of agent in the bigger cultural domain
+  set number_of_cultural_regions 0                       ;; initializing the number of the cultural domains
+
+  setup-turtles                                          ;; creating the agents, locating them and setting their cultural values randomly
+
+  reset-ticks
+  set time 0
+end
+
+
+;; Turtles settings
+to setup-turtles
+  set-default-shape turtles "default"
+  create-turtles number_of_agents [
+    set size 0.8
+    set color white
+    while [any? other turtles-here] [ move-to one-of patches ] ;; setting agent location. Only one agent at each patch
+  ]
+
+  setup-culture-max                                       ;; asigning a value to the culture with maximum traits value
+  setup-agent-culture                                     ;; setting agents culture
+  count-cultures                                          ;; counting the amount of different cultures at time = 0
+  do-plots                                                ;; plotting for visualization
+end
+
+
+;; setting agents culture
+to setup-agent-culture
+  ask turtles [
+    set culture []
+    repeat f [
+      set culture lput random q culture                   ;; setting a random trait to each feature of the agent culture
+    ]
+    setup-agent-culture-color                             ;; setting a color for an agent according to its culture
+  ]
+end
+
+;; asigning a value to the culture with maximum traits values
+;; it is done mapping the traits value to a number in base q
+to setup-culture-max
+  let i 1
+  let suma 0
+  repeat F [
+    set suma suma + q ^ (F - i)
+    set i i + 1
+  ]
+  set Cult_max ((q - 1) * suma)
+end
+
+;; -------------------------------------------------- ;;
+;;;;;;;;;;;;;;;;;;;;;;
+;;; MAIN PROCEDURE ;;;
+;;;;;;;;;;;;;;;;;;;;;;
+
+to go
+  clear-links
+  let repeating? true
+  while [repeating?] [
+    set number_of_possible_interactions 0                            ;; setting initial values
+    set number_of_real_interactions 0
+    ask turtles [                                                    ;; asking agents to move and interact localy
+      if random-float 1.0 < veloc [ random-move ]                    ;;   moving (in case veloc > 0)
+      cultural-interaction                                           ;; all agents interact in asyncronous-random updating
+    ]
+    if number_of_possible_interactions = 0 [set repeating? false]    ;; stopping when there are no possible interactions
+    set time time + 1                                                ;;   it happens when each agent has full or null overlap with
+                                                                     ;;   each of its neighbors.
+                                                                     ;;   neighbors are all agents in radius 'radius'
+    count-cultures                                                   ;; counting the amount of different cultures
+    do-plots                                                         ;;   and plotting for visualization
+    tick
+  ]
+
+  count-turtles-on-bigger-region                                     ;; when running stops, count number of agents in the bigger domain
+                                                                     ;;   and the amount of domains
+
+  if saving? [                                                         ;; to save if saving? true
+    let file_out_name  (word "F" F "L" world-size-x "r" radius ".dat") ;;   it is saved a file with values of
+    file-open file_out_name                                            ;;   q, number of agents in the bigger cultural domain (normalized), number of cultural domains (normalized)
+    file-print (word q " " (giant-component-size / number_of_agents) " " (number_of_cultural_regions / number_of_agents))
+    file-close
+  ]
+  stop
+end
+
+;; calculating number cultures on the whole society
+to count-cultures
+  let list_of_cultures []
+  ask turtles [
+    ; setting agent culture in base q
+    let i 1
+    let suma 0
+    repeat F [
+      set suma suma + item (i - 1) culture * q ^ (F - i) ;10 ^ (F - i)
+      set i i + 1
+    ]
+    set list_of_cultures fput suma list_of_cultures                    ;; including each culture (its corresponding number) in a list
+  ]
+  set list_of_cultures remove-duplicates list_of_cultures              ;; removing repeted cultures
+  set number_of_cultures length list_of_cultures                       ;; the amount of different cultures is the length of the list
+end
+
+;; counting the number of agent in the biggest culture
+to count-turtles-on-bigger-region
+  ; first it is linked all agents of the same culture (each agent looks for a neighbour which is in its neighborhood (agent inside in radius)
+  ask turtles [
+    creates-links-with-same-cultural-neighbours-in-neighborhood-of-radio-radius
+  ]
+  find-all-components                                                  ;; exploring each connected network finding and counting agents of the same culture
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Network Exploration ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; to find all the connected components in the network, their sizes and starting turtles
+to find-all-components
+  ask turtles [ set explored? false]
+  ;; keep exploring till all turtles get explored
+  loop
+  [
+    ;; pick a node taht has not yet been explored
+    let starting_turtle one-of turtles with [ not explored? ]
+    if starting_turtle = nobody [ stop ]
+    ;; reset the number of turtles found to 0. This variable is updated each time we explore an unexplored node
+    set component-size 0
+    ;; find all turtles reachable from this node
+    ask starting_turtle [
+      explore
+      ;; after each explore procedure finishes it is explored one cultural region, so increment the counter (  number_of_cultural_regions )
+      set number_of_cultural_regions number_of_cultural_regions + 1
+    ]
+    ;; the explore procedure updates the component-size variable, so check, have we found a new giant component?
+    if component-size > giant-component-size [
+      set giant-component-size component-size
+    ]
+  ]
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; TURTLES' PROCEDURES ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Finds all turtle reachable from this node (it is a recursive procedure)
+to explore ;; turtle procedure
+  if explored? [ stop ]
+  set explored? true
+  set component-size component-size + 1
+  ask link-neighbors [ explore ]
+end
+
+;; agents look for a neighbor to interact
+to cultural-interaction
+  ;counting any turtle for interacting at distance less than radius
+  let number_of_possible_neighbors count other turtles in-radius radius
+  ;if there are neighbors for interacting, setting agent neighbors
+  if number_of_possible_neighbors > 0 [
+    let neighbor_turtle one-of other turtles in-radius radius
+    ;interacting the cultures
+    let target_turtle self
+    culturally_interacting target_turtle neighbor_turtle
+  ]
+end
+
+;; an agent creates a link with all it neighbors with the same culture
+to creates-links-with-same-cultural-neighbours-in-neighborhood-of-radio-radius
+  let neighborhood other turtles in-radius radius
+  ask neighborhood [
+    if overlap_between self myself = F [ create-link-with myself ]                ;; overlap_between is a reporter
+  ]
+end
+
+;; setting interaction between target agent and neighbor selected
+to culturally_interacting [target_turtle neighbor_turtle]
+  let overlap overlap_between target_turtle neighbor_turtle
+  if (0 < overlap and overlap < F ) [
+    set number_of_possible_interactions number_of_possible_interactions + 1       ;; if interaction is possible increment the counter
+    let prob_interaction (overlap / F)                                            ;; setting the probability of interaction
+    if random-float 1.0 < prob_interaction [
+      set number_of_real_interactions number_of_real_interactions + 1
+      ;choosing a feature position randomly where the two cultures are different
+      let trait random F                                                          ;; generates a number between 0 and (F - 1)
+      let trait_selected? false
+      while [not trait_selected?] [
+        ifelse (item trait [culture] of target_turtle = item trait [culture] of neighbor_turtle)
+        [
+          set trait ((trait + 1) mod F)                                           ;; looking for other feature
+        ]
+        [
+          set trait_selected? true                                                ;; found a feature with different cultural traits
+        ]
+      ]
+      let new_cultural_value (item trait [culture] of neighbor_turtle)
+      set culture replace-item trait culture new_cultural_value                   ;; replacing/copying the neighbor trait
+      setup-agent-culture-color                                                   ;; updating the agent color according to its new culture
+    ]
+  ]
+end
+
+;; random move according to 'steplength' and 'angle' for rotating
+to random-move
+  let var (random angle + 1)                                           ;; selecting and angle to rotate
+  set heading (heading +  var - ((angle + 1) / 2))                     ;; mapping for left and right
+  ifelse can-move? steplength                                          ;; in case of no periodic boundary conditions, if agent at the border
+  [                                                                    ;;     rotate with any angle for new direction
+    forward steplength
+  ]
+  [
+    set heading random 360
+    forward steplength
+  ]
+end
+
+;; setting the color according to the culture
+to setup-agent-culture-color
+  ;setting agent culture in base q
+  let i 1
+  let suma 0
+  repeat F [
+    set suma suma + item (i - 1) culture * q ^ (F - i)  ;10 ^ (F - i)
+    set i i + 1
+  ]
+  let Cult_base_q suma
+
+  ;setting the corresponding color to the turtle according to the culture_base_q value. a range of blue is selected
+  set color (9.9 * Cult_base_q / Cult_max) + 100
+end
+
+;;;;;;;;;;;;;;
+;;; GRAPHS ;;;
+;;;;;;;;;;;;;;
+
+to do-plots
+  ;setting the plot of Cultures
+  set-current-plot "Cultures"
+  set-current-plot-pen "Cultures"
+  plotxy time (number_of_cultures / q ^ F)
+
+  ;setting the plot of interactions
+  set-current-plot "Interactions"
+  set-current-plot-pen "Possible"
+  plotxy time (number_of_possible_interactions / number_of_agents)
+  set-current-plot-pen "Real"
+  plotxy time (number_of_real_interactions / number_of_agents)
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; REPORT PROCEDURES ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; reporting overlap between two agents
+to-report overlap_between [target_turtle neighbor_turtle]
+  let suma 0
+  (foreach [culture] of target_turtle [culture] of neighbor_turtle
+    [ [?1 ?2] -> if ?1 = ?2 [ set suma suma + 1]  ]
+    )
+  report suma
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; PATCHES' PROCEDURES ;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; there are no patches procedures]]></code>
+  <widgets>
+    <view x="379" wrappingAllowedX="true" y="0" frameRate="30.0" minPycor="0" height="538" showTickCounter="true" patchSize="23.17" fontSize="15" wrappingAllowedY="true" width="538" tickCounterLabel="ticks" maxPycor="29" updateMode="1" maxPxcor="29" minPxcor="0"></view>
+    <input x="5" multiline="false" y="50" height="60" variable="world-size-x" type="number" width="100">30.0</input>
+    <input x="5" multiline="false" y="114" height="60" variable="F" type="number" width="100">3.0</input>
+    <input x="109" multiline="false" y="110" height="60" variable="q" type="number" width="100">8.0</input>
+    <input x="213" multiline="false" y="110" height="60" variable="radius" type="number" width="100">1.0</input>
+    <input x="109" multiline="false" y="47" height="60" variable="world-size-y" type="number" width="100">30.0</input>
+    <monitor x="44" precision="17" y="617" height="60" fontSize="11" width="87" display="Normalized Giant Component Size">giant-component-size / number_of_agents</monitor>
+    <monitor x="136" precision="17" y="617" height="60" fontSize="11" width="142" display="Giant Component Size">giant-component-size</monitor>
+    <note x="58" y="561" backgroundDark="0" fontSize="12" width="122" markdown="false" height="30" textColorDark="-1" textColorLight="-16777216" backgroundLight="0"><![CDATA[reporting at the end ->]]></note>
+    <monitor x="569" precision="17" y="618" height="60" fontSize="11" width="100" display="No. Cultures">number_of_cultures</monitor>
+    <plot x="372" autoPlotX="true" yMax="1.0" autoPlotY="true" yAxis="No. of Cultures / q^F" y="686" xMin="0.0" height="272" legend="true" xMax="10.0" yMin="0.0" width="328" xAxis="time" display="Cultures">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="Cultures" color="-16777216" legend="true">
+        <setup></setup>
+        <update></update>
+      </pen>
+    </plot>
+    <plot x="786" autoPlotX="true" yMax="1.0" autoPlotY="true" yAxis="No. of Interactions" y="677" xMin="0.0" height="277" legend="true" xMax="10.0" yMin="0.0" width="355" xAxis="time" display="Interactions">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="Possible" color="-2674135" legend="true">
+        <setup></setup>
+        <update></update>
+      </pen>
+      <pen interval="1.0" mode="0" display="Real" color="-13791810" legend="true">
+        <setup></setup>
+        <update></update>
+      </pen>
+    </plot>
+    <monitor x="569" precision="17" y="550" height="60" fontSize="11" width="96" display="Normalized No. of Cultural Regions">number_of_cultural_regions / number_of_agents</monitor>
+    <monitor x="395" precision="17" y="617" height="60" fontSize="11" width="169" display="Normalized No. of Cultures">number_of_cultures / q ^ F</monitor>
+    <monitor x="398" precision="17" y="548" height="60" fontSize="11" width="165" display="Number of cultural regions">number_of_cultural_regions</monitor>
+    <monitor x="792" precision="17" y="605" height="60" fontSize="11" width="327" display="Possible Interactions">number_of_possible_interactions</monitor>
+    <button x="5" actionKey="G" y="196" height="36" disableUntilTicks="false" forever="false" kind="Observer" width="75" display="Go">go</button>
+    <switch x="96" y="193" height="40" on="false" variable="saving?" width="95" display="saving?"></switch>
+    <slider x="14" step="0.1" y="244" max="1" width="150" display="veloc" height="50" min="0" direction="Horizontal" default="0.0" variable="veloc"></slider>
+    <slider x="16" step="1" y="301" max="359" width="150" display="angle" height="50" min="0" direction="Horizontal" default="0.0" variable="angle"></slider>
+    <slider x="15" step="0.01" y="357" max="1" width="150" display="steplength" height="50" min="0.1" direction="Horizontal" default="0.15" variable="steplength"></slider>
+    <button x="4" actionKey="S" y="10" height="36" disableUntilTicks="false" forever="false" kind="Observer" width="86" display="Setup">setup</button>
+  </widgets>
+  <info>## WHAT IS IT?
+
+This is Axelrod’s model of cultural dissemination. See Reference at the end. It is an agent-model designed to investigate the dissemination of culture among interacting agents on a society.
+
+Axelrod model consists in a population of agents, each one occupying a single node of a square network of size L. The culture of an agent is described by a vector of F integer variables called 'features'. Each feature can assume q different values between 0 and q-1. In the original Axelrod model the interaction topology is regular bounded (non-toroidal). Each agent can interact only with its four neighbors (von Neumann neighborhood).
+
+Dynamics are based on two main mechanisms: (1) agents tend to chose culturally similar neighbors as interaction partners (homophily) and (2) during interaction agents influence each other in a way that they become more similar. 
+
+The interplay of these mechanisms either leads to cultural homogeneity (all agents are perfectly similar) or the development of culturally distinct regions (multicultural society). The model allows studying to which degree the likelihood of these two outcomes depends on the size of the population, the number of features the agents hold, the number of traits (values) each feature can adopt and the neighborhood size (interaction range). 
+
+## HOW IT WORKS
+
+Each agent is located at each patch of the grid with the default shape. Agents hold a number of features F. Each feature is a nominal variable that can adopt a certain number of values (called traits) from 0 to q - 1. Initially, agents adopt randomly chosen traits. At each time step (tick) agents update its cultural value in an asyncronous-random updating. That is that the computer makes a list where all agents are included in a random order and the list is followed until all agents are choosen. Each agent them become a focal agent and then, one of the focal agent’s neighbors is selected at random. Neighbor agents are those who are in distance less than the value of the parameter 'radius'. If radius = 1, then it is von Neumann neighborhood. The cultural overlap between these two agents is computed. The cultural overlap is equal to the percentage of similar features. With probability similar to the overlap, the two agents interact. Otherwise, the program continues with the next agent until the list is exhausted and it follows the next time step (next tick). An interaction consists of selecting at random one of the features on which the two agents differ and changing the focal agent’s feature to the interaction partner’s trait. Note that if the overlap is zero, interaction is not possible and the respective agents refuse to influence each other.
+
+## HOW TO USE IT
+
+First, you should choose the population size selecting the size of the grid society on x and y directions and write these values on 'world-size-x' and 'world-size-y'. Also you should choose value for F (number of features), q (how many traitseach feature cand adopt) and radius (size of the neighborhood). Here, 1 means that each agent has 4 neighbors, 2 corresponds to 12 neighbors, and so on.
+
+Each agent adopts a color which represents its culture. If two agents adopt the same color, they have the same culture.
+
+Click on Go and the simulation starts. You can follow the changes of the agents culture according to his color. Furthermore, there is a graph reporting the number of different cultures on the society and the number of possible and real interactions. A possible interaction is that which agents share more than zero and left than all its features. A real interaction is when focal agent actualy change the value of one of its features.
+
+Simulation stops when the number of possible interactions reaches zero. That means that each agent share all of none of its traits value with all its neighbors.
+
+At the end it is calculated and reported the number of cultural regions in the population and the number of agents in the biggest one (also normalized). A region is a set of agents that are similar on all features. You can choose to save these values with 'saving? on'.
+
+We included an extensions of Axelrod’s model: agents can move.
+Then, you should also decide if the agents can move or not. In original Axelrod model the agents do not move. If moving, select the velocity of agent movement with 'veloc', select the length of the step with 'steplength' and the angle of rotating with 'angle'. If moving, at each tick agents decide to move taking 'veloc' as a probability. In case of actual movement, agents select at random an angle were the upper half values add this angle value to the current one the agent has and the lower half subtracts this angle to the current one. Then, ones direction is selected, agent moves a distance 'steplength'.
+
+## THINGS TO NOTICE
+
+Here we have setted toroidal boundaries, but the simulation can properly function as well in the original non-toroidal one. In our case, the four von Neumann neighbors are at distance 'radius' one. The model permits to change the value of 'radius' to explore the implications of other neighborhood sizes. It is also implemented the possiblity for agents to move. 
+
+At the end, in the absorving final state, when calculating for the number of regions, the model makes different visible networks which include all neighbors agents with the same culture. Then, when counting the number of cultural domains it is considered that two domains are different if they are not connected, even if agents in both domains share same culture.
+
+Note also that two agents could have similar (but with zero overlap) cultural values and then, its corresponding colors could be so similar that it could induce to think that the cultural values are the same. Just check to see that it is not.
+
+## THINGS TO TRY
+
+Vary the population size, the number of features, the number of traits, the range of interactions and also the movement of the agents. The program stops when the first absorving state is found (the number of possible interactions are zero on one time step), even if the agents are moving. Try toroidal and not toroidal borders activating ‘World wraps horizontally’ and ‘World wraps vertically’ in the Settings menu.
+
+## EXTENDING THE MODEL
+
+Many many extensions of this model have been proposed (see e.g. references below). One of the most interesting is certainly the inclusion of 'social influence' instead of dyadic interaction (see e.g. references below). It has been shown that this makes the persistence of different cultural region very strongh.
+
+## RELATED MODELS
+
+There are a lot of related models. You can follow the References here after or in the literature.
+
+## CREDITS AND REFERENCES
+
+This model has been developed by Robert Axelrod. 
+It was implemented by Arezky H. Rodríguez (arezky@gmail.com).
+
+This is the paper where Axelrod presented the model:
+
+Axelrod, R. 1997. “The dissemination of culture - A model with local convergence and global polarization.” Journal of Conflict Resolution 41:203-226.
+
+Extensions can be found at:
+
+Flache, A., and M. Macy. 2008. “Local Convergence and Global Diversity: From Interpersonal to Social Influence.” arXiv:0808.2710 [physics.soc-ph].
+
+Flache, A., and M. Macy. 2006. “What sustains cultural diversity and what undermines it? Axelrod and beyond.” arXiv:physics/0604201v1 [physics.soc-ph].
+
+Flache, A., and M. Macy. 2007. “Local Convergence and Global Diversity: The Robustness of Cultural Homophily.” arXiv:physics/0701333v1 [physics.soc-ph].
+
+Klemm, K., V. M. Eguiluz, R. Toral, and M. S. Miguel. 2003. “Global culture: A noise-induced transition in finite systems.” Phys. Rev. E 67, 045101.
+
+Klemm, K., V. M. Eguiluz, R. Toral, and M. San Miguel. 2003. “Nonequilibrium transitions in complex networks: A model of social interaction.” Phys. Rev. E 67, 026120.
+
+Copyright 2013 by Arezky H. Rodríguez (arezky@gmail.com). All rights reserved.</info>
+  <turtleShapes>
+    <shape name="default" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="5"></point>
+        <point x="40" y="250"></point>
+        <point x="150" y="205"></point>
+        <point x="260" y="250"></point>
+      </polygon>
+    </shape>
+    <shape name="airplane" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="135" y="15"></point>
+        <point x="120" y="60"></point>
+        <point x="120" y="105"></point>
+        <point x="15" y="165"></point>
+        <point x="15" y="195"></point>
+        <point x="120" y="180"></point>
+        <point x="135" y="240"></point>
+        <point x="105" y="270"></point>
+        <point x="120" y="285"></point>
+        <point x="150" y="270"></point>
+        <point x="180" y="285"></point>
+        <point x="210" y="270"></point>
+        <point x="165" y="240"></point>
+        <point x="180" y="180"></point>
+        <point x="285" y="195"></point>
+        <point x="285" y="165"></point>
+        <point x="180" y="105"></point>
+        <point x="180" y="60"></point>
+        <point x="165" y="15"></point>
+      </polygon>
+    </shape>
+    <shape name="arrow" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="0" y="150"></point>
+        <point x="105" y="150"></point>
+        <point x="105" y="293"></point>
+        <point x="195" y="293"></point>
+        <point x="195" y="150"></point>
+        <point x="300" y="150"></point>
+      </polygon>
+    </shape>
+    <shape name="box" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="285"></point>
+        <point x="285" y="225"></point>
+        <point x="285" y="75"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="135"></point>
+        <point x="15" y="75"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="75"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="75"></point>
+        <point x="15" y="225"></point>
+        <point x="150" y="285"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <line endX="150" startY="285" marked="false" color="255" endY="135" startX="150"></line>
+      <line endX="15" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+      <line endX="285" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+    </shape>
+    <shape name="bug" rotatable="true" editableColorIndex="0">
+      <circle x="96" y="182" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="110" y="127" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <circle x="110" y="75" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <line endX="80" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+      <line endX="220" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+    </shape>
+    <shape name="butterfly" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="209" y="199"></point>
+        <point x="225" y="225"></point>
+        <point x="225" y="255"></point>
+        <point x="195" y="270"></point>
+        <point x="165" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="89" y="198"></point>
+        <point x="75" y="225"></point>
+        <point x="75" y="255"></point>
+        <point x="105" y="270"></point>
+        <point x="135" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="139" y="148"></point>
+        <point x="100" y="105"></point>
+        <point x="55" y="90"></point>
+        <point x="25" y="90"></point>
+        <point x="10" y="105"></point>
+        <point x="10" y="135"></point>
+        <point x="25" y="180"></point>
+        <point x="40" y="195"></point>
+        <point x="85" y="194"></point>
+        <point x="139" y="163"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="162" y="150"></point>
+        <point x="200" y="105"></point>
+        <point x="245" y="90"></point>
+        <point x="275" y="90"></point>
+        <point x="290" y="105"></point>
+        <point x="290" y="135"></point>
+        <point x="275" y="180"></point>
+        <point x="260" y="195"></point>
+        <point x="215" y="195"></point>
+        <point x="162" y="165"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="135" y="225"></point>
+        <point x="120" y="150"></point>
+        <point x="135" y="120"></point>
+        <point x="150" y="105"></point>
+        <point x="165" y="120"></point>
+        <point x="180" y="150"></point>
+        <point x="165" y="225"></point>
+      </polygon>
+      <circle x="135" y="90" marked="false" color="255" diameter="30" filled="true"></circle>
+      <line endX="195" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+      <line endX="105" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+    </shape>
+    <shape name="car" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="300" y="180"></point>
+        <point x="279" y="164"></point>
+        <point x="261" y="144"></point>
+        <point x="240" y="135"></point>
+        <point x="226" y="132"></point>
+        <point x="213" y="106"></point>
+        <point x="203" y="84"></point>
+        <point x="185" y="63"></point>
+        <point x="159" y="50"></point>
+        <point x="135" y="50"></point>
+        <point x="75" y="60"></point>
+        <point x="0" y="150"></point>
+        <point x="0" y="165"></point>
+        <point x="0" y="225"></point>
+        <point x="300" y="225"></point>
+        <point x="300" y="180"></point>
+      </polygon>
+      <circle x="180" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <circle x="30" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="162" y="80"></point>
+        <point x="132" y="78"></point>
+        <point x="134" y="135"></point>
+        <point x="209" y="135"></point>
+        <point x="194" y="105"></point>
+        <point x="189" y="96"></point>
+        <point x="180" y="89"></point>
+      </polygon>
+      <circle x="47" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+      <circle x="195" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+    </shape>
+    <shape name="circle" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="circle 2" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+    </shape>
+    <shape name="cow" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="200" y="193"></point>
+        <point x="197" y="249"></point>
+        <point x="179" y="249"></point>
+        <point x="177" y="196"></point>
+        <point x="166" y="187"></point>
+        <point x="140" y="189"></point>
+        <point x="93" y="191"></point>
+        <point x="78" y="179"></point>
+        <point x="72" y="211"></point>
+        <point x="49" y="209"></point>
+        <point x="48" y="181"></point>
+        <point x="37" y="149"></point>
+        <point x="25" y="120"></point>
+        <point x="25" y="89"></point>
+        <point x="45" y="72"></point>
+        <point x="103" y="84"></point>
+        <point x="179" y="75"></point>
+        <point x="198" y="76"></point>
+        <point x="252" y="64"></point>
+        <point x="272" y="81"></point>
+        <point x="293" y="103"></point>
+        <point x="285" y="121"></point>
+        <point x="255" y="121"></point>
+        <point x="242" y="118"></point>
+        <point x="224" y="167"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="73" y="210"></point>
+        <point x="86" y="251"></point>
+        <point x="62" y="249"></point>
+        <point x="48" y="208"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="25" y="114"></point>
+        <point x="16" y="195"></point>
+        <point x="9" y="204"></point>
+        <point x="23" y="213"></point>
+        <point x="25" y="200"></point>
+        <point x="39" y="123"></point>
+      </polygon>
+    </shape>
+    <shape name="cylinder" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="dot" rotatable="false" editableColorIndex="0">
+      <circle x="90" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+    </shape>
+    <shape name="face happy" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="90" y="239"></point>
+        <point x="62" y="213"></point>
+        <point x="47" y="191"></point>
+        <point x="67" y="179"></point>
+        <point x="90" y="203"></point>
+        <point x="109" y="218"></point>
+        <point x="150" y="225"></point>
+        <point x="192" y="218"></point>
+        <point x="210" y="203"></point>
+        <point x="227" y="181"></point>
+        <point x="251" y="194"></point>
+        <point x="236" y="217"></point>
+        <point x="212" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="face neutral" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="7" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <rectangle endX="240" startY="195" marked="false" color="255" endY="225" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="face sad" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="168"></point>
+        <point x="90" y="184"></point>
+        <point x="62" y="210"></point>
+        <point x="47" y="232"></point>
+        <point x="67" y="244"></point>
+        <point x="90" y="220"></point>
+        <point x="109" y="205"></point>
+        <point x="150" y="198"></point>
+        <point x="192" y="205"></point>
+        <point x="210" y="220"></point>
+        <point x="227" y="242"></point>
+        <point x="251" y="229"></point>
+        <point x="236" y="206"></point>
+        <point x="212" y="183"></point>
+      </polygon>
+    </shape>
+    <shape name="fish" rotatable="false" editableColorIndex="0">
+      <polygon color="-1" filled="true" marked="false">
+        <point x="44" y="131"></point>
+        <point x="21" y="87"></point>
+        <point x="15" y="86"></point>
+        <point x="0" y="120"></point>
+        <point x="15" y="150"></point>
+        <point x="0" y="180"></point>
+        <point x="13" y="214"></point>
+        <point x="20" y="212"></point>
+        <point x="45" y="166"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="135" y="195"></point>
+        <point x="119" y="235"></point>
+        <point x="95" y="218"></point>
+        <point x="76" y="210"></point>
+        <point x="46" y="204"></point>
+        <point x="60" y="165"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="75" y="45"></point>
+        <point x="83" y="77"></point>
+        <point x="71" y="103"></point>
+        <point x="86" y="114"></point>
+        <point x="166" y="78"></point>
+        <point x="135" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="136"></point>
+        <point x="151" y="77"></point>
+        <point x="226" y="81"></point>
+        <point x="280" y="119"></point>
+        <point x="292" y="146"></point>
+        <point x="292" y="160"></point>
+        <point x="287" y="170"></point>
+        <point x="270" y="195"></point>
+        <point x="195" y="210"></point>
+        <point x="151" y="212"></point>
+        <point x="30" y="166"></point>
+      </polygon>
+      <circle x="215" y="106" marked="false" color="255" diameter="30" filled="true"></circle>
+    </shape>
+    <shape name="flag" rotatable="false" editableColorIndex="0">
+      <rectangle endX="75" startY="15" marked="true" color="-1920102913" endY="300" startX="60" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="90" y="150"></point>
+        <point x="270" y="90"></point>
+        <point x="90" y="30"></point>
+      </polygon>
+      <line endX="90" startY="135" marked="true" color="-1920102913" endY="135" startX="75"></line>
+      <line endX="90" startY="45" marked="true" color="-1920102913" endY="45" startX="75"></line>
+    </shape>
+    <shape name="flower" rotatable="false" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="135" y="120"></point>
+        <point x="165" y="165"></point>
+        <point x="180" y="210"></point>
+        <point x="180" y="240"></point>
+        <point x="150" y="300"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="240"></point>
+        <point x="195" y="195"></point>
+        <point x="165" y="135"></point>
+      </polygon>
+      <circle x="85" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="147" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="192" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="85" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="70" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="25" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="96" y="51" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="113" y="68" marked="false" color="255" diameter="74" filled="true"></circle>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="189" y="233"></point>
+        <point x="219" y="188"></point>
+        <point x="249" y="173"></point>
+        <point x="279" y="188"></point>
+        <point x="234" y="218"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="180" y="255"></point>
+        <point x="150" y="210"></point>
+        <point x="105" y="210"></point>
+        <point x="75" y="240"></point>
+        <point x="135" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="house" rotatable="false" editableColorIndex="0">
+      <rectangle endX="255" startY="120" marked="true" color="-1920102913" endY="285" startX="45" filled="true"></rectangle>
+      <rectangle endX="180" startY="210" marked="false" color="255" endY="285" startX="120" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="120"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+      <line endX="270" startY="120" marked="false" color="255" endY="120" startX="30"></line>
+    </shape>
+    <shape name="leaf" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="210"></point>
+        <point x="135" y="195"></point>
+        <point x="120" y="210"></point>
+        <point x="60" y="210"></point>
+        <point x="30" y="195"></point>
+        <point x="60" y="180"></point>
+        <point x="60" y="165"></point>
+        <point x="15" y="135"></point>
+        <point x="30" y="120"></point>
+        <point x="15" y="105"></point>
+        <point x="40" y="104"></point>
+        <point x="45" y="90"></point>
+        <point x="60" y="90"></point>
+        <point x="90" y="105"></point>
+        <point x="105" y="120"></point>
+        <point x="120" y="120"></point>
+        <point x="105" y="60"></point>
+        <point x="120" y="60"></point>
+        <point x="135" y="30"></point>
+        <point x="150" y="15"></point>
+        <point x="165" y="30"></point>
+        <point x="180" y="60"></point>
+        <point x="195" y="60"></point>
+        <point x="180" y="120"></point>
+        <point x="195" y="120"></point>
+        <point x="210" y="105"></point>
+        <point x="240" y="90"></point>
+        <point x="255" y="90"></point>
+        <point x="263" y="104"></point>
+        <point x="285" y="105"></point>
+        <point x="270" y="120"></point>
+        <point x="285" y="135"></point>
+        <point x="240" y="165"></point>
+        <point x="240" y="180"></point>
+        <point x="270" y="195"></point>
+        <point x="240" y="210"></point>
+        <point x="180" y="210"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="195"></point>
+        <point x="135" y="240"></point>
+        <point x="120" y="255"></point>
+        <point x="105" y="255"></point>
+        <point x="105" y="285"></point>
+        <point x="135" y="285"></point>
+        <point x="165" y="240"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+    </shape>
+    <shape name="line" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="300" startX="150"></line>
+    </shape>
+    <shape name="line half" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="150" startX="150"></line>
+    </shape>
+    <shape name="pentagon" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="15"></point>
+        <point x="15" y="120"></point>
+        <point x="60" y="285"></point>
+        <point x="240" y="285"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+    </shape>
+    <shape name="person" rotatable="false" editableColorIndex="0">
+      <circle x="110" y="5" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="120" y="195"></point>
+        <point x="90" y="285"></point>
+        <point x="105" y="300"></point>
+        <point x="135" y="300"></point>
+        <point x="150" y="225"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="300"></point>
+        <point x="210" y="285"></point>
+        <point x="180" y="195"></point>
+        <point x="195" y="90"></point>
+      </polygon>
+      <rectangle endX="172" startY="79" marked="true" color="-1920102913" endY="94" startX="127" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="195" y="90"></point>
+        <point x="240" y="150"></point>
+        <point x="225" y="180"></point>
+        <point x="165" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="60" y="150"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="105"></point>
+      </polygon>
+    </shape>
+    <shape name="plant" rotatable="false" editableColorIndex="0">
+      <rectangle endX="165" startY="90" marked="true" color="-1920102913" endY="300" startX="135" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="255"></point>
+        <point x="90" y="210"></point>
+        <point x="45" y="195"></point>
+        <point x="75" y="255"></point>
+        <point x="135" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="255"></point>
+        <point x="210" y="210"></point>
+        <point x="255" y="195"></point>
+        <point x="225" y="255"></point>
+        <point x="165" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="180"></point>
+        <point x="90" y="135"></point>
+        <point x="45" y="120"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="180"></point>
+        <point x="165" y="210"></point>
+        <point x="225" y="180"></point>
+        <point x="255" y="120"></point>
+        <point x="210" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="105"></point>
+        <point x="90" y="60"></point>
+        <point x="45" y="45"></point>
+        <point x="75" y="105"></point>
+        <point x="135" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="105"></point>
+        <point x="165" y="135"></point>
+        <point x="225" y="105"></point>
+        <point x="255" y="45"></point>
+        <point x="210" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="90"></point>
+        <point x="120" y="45"></point>
+        <point x="150" y="15"></point>
+        <point x="180" y="45"></point>
+        <point x="165" y="90"></point>
+      </polygon>
+    </shape>
+    <shape name="sheep" rotatable="false" editableColorIndex="0">
+      <rectangle endX="180" startY="225" marked="true" color="-1920102913" endY="285" startX="151" filled="true"></rectangle>
+      <rectangle endX="75" startY="225" marked="true" color="-1920102913" endY="285" startX="47" filled="true"></rectangle>
+      <rectangle endX="210" startY="75" marked="true" color="-1920102913" endY="225" startX="15" filled="true"></rectangle>
+      <circle x="135" y="75" marked="true" color="-1920102913" diameter="150" filled="true"></circle>
+      <circle x="165" y="76" marked="false" color="255" diameter="116" filled="true"></circle>
+    </shape>
+    <shape name="square" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+    </shape>
+    <shape name="square 2" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+      <rectangle endX="240" startY="60" marked="false" color="255" endY="240" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="star" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="151" y="1"></point>
+        <point x="185" y="108"></point>
+        <point x="298" y="108"></point>
+        <point x="207" y="175"></point>
+        <point x="242" y="282"></point>
+        <point x="151" y="216"></point>
+        <point x="59" y="282"></point>
+        <point x="94" y="175"></point>
+        <point x="3" y="108"></point>
+        <point x="116" y="108"></point>
+      </polygon>
+    </shape>
+    <shape name="target" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <circle x="60" y="60" marked="true" color="-1920102913" diameter="180" filled="true"></circle>
+      <circle x="90" y="90" marked="false" color="255" diameter="120" filled="true"></circle>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+    </shape>
+    <shape name="tree" rotatable="false" editableColorIndex="0">
+      <circle x="118" y="3" marked="true" color="-1920102913" diameter="94" filled="true"></circle>
+      <rectangle endX="180" startY="195" marked="false" color="-1653716737" endY="300" startX="120" filled="true"></rectangle>
+      <circle x="65" y="21" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="116" y="41" marked="true" color="-1920102913" diameter="127" filled="true"></circle>
+      <circle x="45" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+      <circle x="104" y="74" marked="true" color="-1920102913" diameter="152" filled="true"></circle>
+    </shape>
+    <shape name="triangle" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+    </shape>
+    <shape name="triangle 2" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="151" y="99"></point>
+        <point x="225" y="223"></point>
+        <point x="75" y="224"></point>
+      </polygon>
+    </shape>
+    <shape name="truck" rotatable="false" editableColorIndex="0">
+      <rectangle endX="195" startY="45" marked="true" color="-1920102913" endY="187" startX="4" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="296" y="193"></point>
+        <point x="296" y="150"></point>
+        <point x="259" y="134"></point>
+        <point x="244" y="104"></point>
+        <point x="208" y="104"></point>
+        <point x="207" y="194"></point>
+      </polygon>
+      <rectangle endX="195" startY="60" marked="false" color="-1" endY="105" startX="195" filled="true"></rectangle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="238" y="112"></point>
+        <point x="252" y="141"></point>
+        <point x="219" y="141"></point>
+        <point x="218" y="112"></point>
+      </polygon>
+      <circle x="234" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <rectangle endX="214" startY="185" marked="true" color="-1920102913" endY="194" startX="181" filled="true"></rectangle>
+      <circle x="144" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="144" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="234" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+    </shape>
+    <shape name="turtle" rotatable="true" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="215" y="204"></point>
+        <point x="240" y="233"></point>
+        <point x="246" y="254"></point>
+        <point x="228" y="266"></point>
+        <point x="215" y="252"></point>
+        <point x="193" y="210"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="195" y="90"></point>
+        <point x="225" y="75"></point>
+        <point x="245" y="75"></point>
+        <point x="260" y="89"></point>
+        <point x="269" y="108"></point>
+        <point x="261" y="124"></point>
+        <point x="240" y="105"></point>
+        <point x="225" y="105"></point>
+        <point x="210" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="105" y="90"></point>
+        <point x="75" y="75"></point>
+        <point x="55" y="75"></point>
+        <point x="40" y="89"></point>
+        <point x="31" y="108"></point>
+        <point x="39" y="124"></point>
+        <point x="60" y="105"></point>
+        <point x="75" y="105"></point>
+        <point x="90" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="132" y="85"></point>
+        <point x="134" y="64"></point>
+        <point x="107" y="51"></point>
+        <point x="108" y="17"></point>
+        <point x="150" y="2"></point>
+        <point x="192" y="18"></point>
+        <point x="192" y="52"></point>
+        <point x="169" y="65"></point>
+        <point x="172" y="87"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="85" y="204"></point>
+        <point x="60" y="233"></point>
+        <point x="54" y="254"></point>
+        <point x="72" y="266"></point>
+        <point x="85" y="252"></point>
+        <point x="107" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="119" y="75"></point>
+        <point x="179" y="75"></point>
+        <point x="209" y="101"></point>
+        <point x="224" y="135"></point>
+        <point x="220" y="225"></point>
+        <point x="175" y="261"></point>
+        <point x="128" y="261"></point>
+        <point x="81" y="224"></point>
+        <point x="74" y="135"></point>
+        <point x="88" y="99"></point>
+      </polygon>
+    </shape>
+    <shape name="wheel" rotatable="false" editableColorIndex="0">
+      <circle x="3" y="3" marked="true" color="-1920102913" diameter="294" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <line endX="150" startY="285" marked="true" color="-1920102913" endY="15" startX="150"></line>
+      <line endX="285" startY="150" marked="true" color="-1920102913" endY="150" startX="15"></line>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+      <line endX="79" startY="40" marked="true" color="-1920102913" endY="269" startX="216"></line>
+      <line endX="269" startY="84" marked="true" color="-1920102913" endY="221" startX="40"></line>
+      <line endX="269" startY="216" marked="true" color="-1920102913" endY="79" startX="40"></line>
+      <line endX="221" startY="40" marked="true" color="-1920102913" endY="269" startX="84"></line>
+    </shape>
+    <shape name="wolf" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="285"></point>
+        <point x="195" y="285"></point>
+        <point x="270" y="90"></point>
+        <point x="30" y="90"></point>
+        <point x="105" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="270" y="90"></point>
+        <point x="225" y="15"></point>
+        <point x="180" y="90"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="90"></point>
+        <point x="75" y="15"></point>
+        <point x="120" y="90"></point>
+      </polygon>
+      <circle x="183" y="138" marked="false" color="-1" diameter="24" filled="true"></circle>
+      <circle x="93" y="138" marked="false" color="-1" diameter="24" filled="true"></circle>
+    </shape>
+    <shape name="x" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="270" y="75"></point>
+        <point x="225" y="30"></point>
+        <point x="30" y="225"></point>
+        <point x="75" y="270"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="75"></point>
+        <point x="75" y="30"></point>
+        <point x="270" y="225"></point>
+        <point x="225" y="270"></point>
+      </polygon>
+    </shape>
+  </turtleShapes>
+  <linkShapes>
+    <shape name="default" curviness="0.0">
+      <lines>
+        <line x="-0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+        <line x="0.0" visible="true">
+          <dash value="1.0"></dash>
+          <dash value="0.0"></dash>
+        </line>
+        <line x="0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+      </lines>
+      <indicator>
+        <shape name="link direction" rotatable="true" editableColorIndex="0">
+          <line endX="90" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+          <line endX="210" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+        </shape>
+      </indicator>
+    </shape>
+  </linkShapes>
+  <previewCommands>setup repeat 75 [ go ]</previewCommands>
+  <experiments>
+    <experiment name="1" repetitions="2" sequentialRunOrder="true" runMetricsEveryStep="true">
+      <setup>setup</setup>
+      <go>go</go>
+      <constants>
+        <enumeratedValueSet variable="radius">
+          <value value="1"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="F">
+          <value value="3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="veloc">
+          <value value="0"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="angle">
+          <value value="10"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="steplength">
+          <value value="0.1"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="q" first="5" step="1" last="15"></steppedValueSet>
+        <enumeratedValueSet variable="world-size-x">
+          <value value="10"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="world-size-y">
+          <value value="10"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+  </experiments>
+</model>
