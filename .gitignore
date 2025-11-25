@@ -13,7 +13,7 @@ __pycache__/
 .latexmkrc
 
 #Assignment
-Assignment_3/
+Assignment_3_tests/
 
 
 # Virtual environments and env files
